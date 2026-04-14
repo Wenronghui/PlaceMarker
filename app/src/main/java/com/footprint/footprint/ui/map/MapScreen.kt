@@ -43,19 +43,11 @@ import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
-enum class MapLayer(val displayName: String, val tileFactory: () -> org.osmdroid.tileprovider.tilesource.TileSourceFactory) {
-    STANDARD("标准地图") { 
-        override fun invoke(): org.osmdroid.tileprovider.tilesource.TileSourceFactory = TileSourceFactory.MAPNIK 
-    },
-    SATELLITE("卫星地图") { 
-        override fun invoke(): org.osmdroid.tileprovider.tilesource.TileSourceFactory = TileSourceFactory.USGS_SAT
-    },
-    HIKING("徒步地图") { 
-        override fun invoke(): org.osmdroid.tileprovider.tilesource.TileSourceFactory = TileSourceFactory.OpenTopo
-    },
-    CONTOUR("等高线图") { 
-        override fun invoke(): org.osmdroid.tileprovider.tilesource.TileSourceFactory = TileSourceFactory.OpenTopo
-    }
+enum class MapLayer(val displayName: String, val tileSource: org.osmdroid.tileprovider.tilesource.ITileSource) {
+    STANDARD("标准地图", TileSourceFactory.MAPNIK),
+    SATELLITE("卫星地图", TileSourceFactory.USGS_SAT),
+    HIKING("徒步地图", TileSourceFactory.OpenTopo),
+    CONTOUR("等高线图", TileSourceFactory.OpenTopo)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,7 +97,7 @@ fun MapScreen(
     
     // Apply map layer
     LaunchedEffect(uiState.currentLayer) {
-        mapView?.setTileSource(uiState.currentLayer.tileFactory.invoke())
+        mapView?.setTileSource(uiState.currentLayer.tileSource)
     }
     
     Scaffold(
@@ -164,7 +156,7 @@ fun MapScreen(
                     MapView(ctx).apply {
                         setMultiTouchControls(true)
                         controller.setZoom(15.0)
-                        setTileSource(uiState.currentLayer.tileFactory.invoke())
+                        setTileSource(uiState.currentLayer.tileSource)
                         
                         // Set initial position to China
                         controller.setCenter(GeoPoint(35.0, 105.0))
@@ -230,7 +222,7 @@ fun MapScreen(
                             modifier = Modifier
                                 .size(12.dp)
                                 .clip(CircleShape)
-                                .background(Color.Red)
+                                .background(ComposeColor.Red)
                         )
                         Text(
                             text = "轨迹记录中",
