@@ -4,18 +4,58 @@ import android.app.Application
 import android.location.Location
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import com.footprint.footprint.data.local.AppDatabase
+import com.footprint.footprint.data.local.entity.MarkerEntity
+import com.footprint.footprint.data.local.entity.TrackEntity
+import com.footprint.footprint.data.local.entity.TrackPointEntity
+import com.footprint.footprint.data.repository.MarkerRepository
+import com.footprint.footprint.data.repository.TrackRepository
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import kotlin.math.*
+
+data class MapUiState(
+    // 位置
+    val currentLocation: GeoPoint? = null,
+    val isLocationEnabled: Boolean = false,
+    
+    // 地图状态
+    val centerLat: Double = 35.0,
+    val centerLon: Double = 105.0,
+    val zoomLevel: Double = 10.0,
+    val currentLayer: MapLayerType = MapLayerType.STANDARD,
+    
+    // 离线地图
+    val offlineMapAvailable: Boolean = false,
+    val isDownloading: Boolean = false,
+    val downloadProgress: Float = 0f,
+    val offlineRegions: List<OfflineRegion> = emptyList(),
+    
+    // 标记
+    val markers: List<MarkerEntity> = emptyList(),
+    
+    // 轨迹记录
+    val isTracking: Boolean = false,
+    val currentTrack: TrackEntity? = null,
+    val trackPoints: List<TrackPointEntity> = emptyList(),
+    val trackDistance: Double = 0.0
+)
+
+data class OfflineRegion(
+    val id: String,
+    val name: String,
+    val center: GeoPoint,
+    val zoomRange: IntRange,
+    val size: Long,
+    val downloaded: Boolean = false
+)
 
 // 地图图层配置
 enum class MapLayerType(
@@ -55,99 +95,73 @@ enum class MapLayerType(
     )
 }
 
-// UI状态
-data class PureMapUiState(
-    val currentLocation: GeoPoint? = null,
-    val currentLayer: MapLayerType = MapLayerType.STANDARD,
-    val centerLat: Double = 35.0,
-    val centerLon: Double = 105.0,
-    val zoomLevel: Double = 10.0,
-    val isLocationEnabled: Boolean = false,
-    val isDownloading: Boolean = false,
-    val downloadProgress: Float = 0f,
-    val offlineMapAvailable: Boolean = false,
-    // 离线地图区域
-    val offlineRegions: List<OfflineRegion> = emptyList()
-)
-
-// 离线地图区域
-data class OfflineRegion(
-    val id: String,
-    val name: String,
-    val center: GeoPoint,
-    val zoomMin: Int,
-    val zoomMax: Int,
-    val size: Long, // bytes
-    val downloaded: Boolean = false
-)
-
 class MapViewModel(application: Application) : AndroidViewModel(application) {
+    private val markerRepository: MarkerRepository
+    private val trackRepository: TrackRepository
     
-    private val fusedLocationClient: FusedLocationProviderClient = 
-        LocationServices.getFusedLocationProviderClient(application)
-    
-    private val _uiState = MutableStateFlow(PureMapUiState())
-    val uiState: StateFlow<PureMapUiState> = _uiState.asStateFlow()
-    
-    private var locationCallback: LocationCallback? = null
+    private val _uiState = MutableStateFlow(MapUiState())
+    val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
     
     init {
-        // 检查离线地图可用性
-        checkOfflineMapAvailability()
-    }
-    
-    private fun checkOfflineMapAvailability() {
-        viewModelScope.launch(Dispatchers.IO) {
-            // 检查缓存目录中是否有离线地图
-            val cacheDir = getApplication<Application>().cacheDir
-            val osmdroidDir = java.io.File(cacheDir, "osmdroid")
-            val tilesDir = java.io.File(osmdroidDir, "tiles")
-            
-            val hasOfflineMaps = tilesDir.exists() && (tilesDir.listFiles()?.isNotEmpty() == true)
-            
-            withContext(Dispatchers.Main) {
-                _uiState.update { it.copy(offlineMapAvailable = hasOfflineMaps) }
+        val database = AppDatabase.getInstance(application)
+        markerRepository = MarkerRepository(database.markerDao())
+        trackRepository = TrackRepository(database.trackDao())
+        
+        // 加载标记
+        viewModelScope.launch {
+            markerRepository.getAllMarkers().collect { markers ->
+                _uiState.update { it.copy(markers = markers) }
             }
         }
-    }
-    
-    fun startLocation() {
-        try {
-            locationCallback = object : LocationCallback() {
-                override fun onLocationResult(result: LocationResult) {
-                    result.lastLocation?.let { location ->
-                        _uiState.update { 
-                            it.copy(
-                                currentLocation = GeoPoint(location.latitude, location.longitude),
-                                isLocationEnabled = true
-                            )
-                        }
-                    }
+        
+        // 检查是否有活动轨迹
+        viewModelScope.launch(Dispatchers.IO) {
+            val activeTrack = trackRepository.getActiveTrack()
+            if (activeTrack != null) {
+                val points = trackRepository.getPointsByTrackIdSync(activeTrack.id)
+                _uiState.update { 
+                    it.copy(
+                        isTracking = true,
+                        currentTrack = activeTrack,
+                        trackPoints = points,
+                        trackDistance = calculateDistance(points)
+                    )
                 }
             }
-            
-            val locationRequest = LocationRequest.Builder(
-                Priority.PRIORITY_HIGH_ACCURACY,
-                5000L
-            ).setMinUpdateIntervalMillis(2000L).build()
-            
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback!!,
-                null
-            )
-        } catch (e: SecurityException) {
-            // Handle permission not granted
         }
+        
+        // 加载预置区域
+        loadPresetRegions()
     }
     
-    fun stopLocation() {
-        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
-        _uiState.update { it.copy(isLocationEnabled = false) }
+    private fun loadPresetRegions() {
+        val regions = listOf(
+            OfflineRegion("changjiang", "长江流域", GeoPoint(30.0, 112.0), 6..12, 500_000_000),
+            OfflineRegion("huanghe", "黄河流域", GeoPoint(35.0, 105.0), 6..12, 450_000_000),
+            OfflineRegion("dongtinghu", "洞庭湖", GeoPoint(29.0, 112.0), 10..16, 80_000_000),
+            OfflineRegion("poyanghu", "鄱阳湖", GeoPoint(29.0, 116.0), 10..16, 80_000_000),
+            OfflineRegion("sanxia", "三峡水库", GeoPoint(31.0, 111.0), 8..14, 100_000_000),
+            OfflineRegion("taihu", "太湖流域", GeoPoint(31.0, 120.0), 9..15, 90_000_000),
+            OfflineRegion("qinhai", "青海湖", GeoPoint(37.0, 100.0), 9..14, 60_000_000),
+            OfflineRegion("yilonghu", "溢龙湖", GeoPoint(33.5, 116.0), 10..16, 50_000_000)
+        )
+        _uiState.update { it.copy(offlineRegions = regions) }
     }
     
-    fun setMapLayer(layer: MapLayerType) {
-        _uiState.update { it.copy(currentLayer = layer) }
+    fun getPresetRegions(): List<OfflineRegion> = _uiState.value.offlineRegions
+    
+    fun startLocation() {
+        _uiState.update { it.copy(isLocationEnabled = true) }
+    }
+    
+    fun updateLocation(location: Location) {
+        val geoPoint = GeoPoint(location.latitude, location.longitude)
+        _uiState.update { it.copy(currentLocation = geoPoint) }
+        
+        // 如果正在记录轨迹，添加点
+        if (_uiState.value.isTracking) {
+            addTrackPoint(geoPoint)
+        }
     }
     
     fun updateCenter(lat: Double, lon: Double) {
@@ -158,100 +172,155 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(zoomLevel = zoom) }
     }
     
-    // 下载离线地图区域
-    fun downloadOfflineRegion(region: OfflineRegion) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isDownloading = true, downloadProgress = 0f) }
+    fun setMapLayer(layer: MapLayerType) {
+        _uiState.update { it.copy(currentLayer = layer) }
+    }
+    
+    // 标记功能
+    fun addMarker(lat: Double, lon: Double, title: String, description: String, category: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val marker = MarkerEntity(
+                title = title,
+                description = description,
+                latitude = lat,
+                longitude = lon,
+                category = category
+            )
+            markerRepository.insertMarker(marker)
+        }
+    }
+    
+    fun deleteMarker(marker: MarkerEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            markerRepository.deleteMarker(marker)
+        }
+    }
+    
+    // 轨迹记录功能
+    fun startTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val track = TrackEntity(
+                name = "轨迹 ${System.currentTimeMillis() % 10000}",
+                startTime = System.currentTimeMillis(),
+                isActive = true
+            )
+            val trackId = trackRepository.insertTrack(track)
+            val newTrack = track.copy(id = trackId)
             
-            // 模拟下载进度（实际应该使用TileDownloader）
-            for (i in 1..100) {
-                kotlinx.coroutines.delay(50)
-                _uiState.update { it.copy(downloadProgress = i / 100f) }
-            }
-            
-            // 下载完成后添加到已下载列表
-            _uiState.update { 
-                it.copy(
-                    isDownloading = false,
-                    offlineRegions = it.offlineRegions + region.copy(downloaded = true),
-                    offlineMapAvailable = true
-                )
+            withContext(Dispatchers.Main) {
+                _uiState.update { 
+                    it.copy(
+                        isTracking = true,
+                        currentTrack = newTrack,
+                        trackPoints = emptyList(),
+                        trackDistance = 0.0
+                    )
+                }
             }
         }
     }
     
-    // 预置的热门钓场/水库区域
-    fun getPresetRegions(): List<OfflineRegion> {
-        return listOf(
-            OfflineRegion(
-                id = "yangtze",
-                name = "长江流域",
-                center = GeoPoint(30.0, 120.0),
-                zoomMin = 5,
-                zoomMax = 15,
-                size = 500_000_000L
-            ),
-            OfflineRegion(
-                id = "yellow_river",
-                name = "黄河流域",
-                center = GeoPoint(35.0, 110.0),
-                zoomMin = 5,
-                zoomMax = 15,
-                size = 450_000_000L
-            ),
-            OfflineRegion(
-                id = "dongting",
-                name = "洞庭湖区域",
-                center = GeoPoint(29.0, 112.0),
-                zoomMin = 8,
-                zoomMax = 15,
-                size = 200_000_000L
-            ),
-            OfflineRegion(
-                id = "poyang",
-                name = "鄱阳湖区域",
-                center = GeoPoint(29.0, 116.0),
-                zoomMin = 8,
-                zoomMax = 15,
-                size = 180_000_000L
-            ),
-            OfflineRegion(
-                id = "sanyang",
-                name = "三峡水库",
-                center = GeoPoint(31.0, 110.0),
-                zoomMin = 8,
-                zoomMax = 15,
-                size = 150_000_000L
-            ),
-            OfflineRegion(
-                id = "liaohe",
-                name = "辽河流域",
-                center = GeoPoint(42.0, 123.0),
-                zoomMin = 5,
-                zoomMax = 15,
-                size = 300_000_000L
-            ),
-            OfflineRegion(
-                id = "heilongjiang",
-                name = "黑龙江流域",
-                center = GeoPoint(50.0, 127.0),
-                zoomMin = 5,
-                zoomMax = 15,
-                size = 400_000_000L
-            ),
-            OfflineRegion(
-                id = "pearl_river",
-                name = "珠江流域",
-                center = GeoPoint(23.0, 113.0),
-                zoomMin = 5,
-                zoomMax = 15,
-                size = 350_000_000L
-            )
-        )
+    fun stopTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val track = _uiState.value.currentTrack
+            if (track != null) {
+                val points = trackRepository.getPointsByTrackIdSync(track.id)
+                val distance = calculateDistance(points)
+                
+                trackRepository.updateTrack(
+                    track.copy(
+                        isActive = false,
+                        endTime = System.currentTimeMillis(),
+                        distance = distance
+                    )
+                )
+                
+                withContext(Dispatchers.Main) {
+                    _uiState.update { 
+                        it.copy(
+                            isTracking = false, 
+                            currentTrack = null, 
+                            trackPoints = emptyList(), 
+                            trackDistance = 0.0
+                        ) 
+                    }
+                }
+            }
+        }
     }
     
-    override fun onCleared() {
-        super.onCleared()
-        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+    private fun addTrackPoint(point: GeoPoint) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val track = _uiState.value.currentTrack ?: return@launch
+            
+            val trackPoint = TrackPointEntity(
+                trackId = track.id,
+                latitude = point.latitude,
+                longitude = point.longitude,
+                timestamp = System.currentTimeMillis()
+            )
+            trackRepository.insertPoint(trackPoint)
+            
+            // 更新UI
+            val newPoints = _uiState.value.trackPoints + trackPoint
+            val newDistance = calculateDistance(newPoints)
+            
+            withContext(Dispatchers.Main) {
+                _uiState.update { 
+                    it.copy(
+                        trackPoints = newPoints,
+                        trackDistance = newDistance
+                    )
+                }
+            }
+        }
+    }
+    
+    private fun calculateDistance(points: List<TrackPointEntity>): Double {
+        if (points.size < 2) return 0.0
+        
+        var totalDistance = 0.0
+        for (i in 0 until points.size - 1) {
+            totalDistance += haversine(
+                points[i].latitude, points[i].longitude,
+                points[i + 1].latitude, points[i + 1].longitude
+            )
+        }
+        return totalDistance
+    }
+    
+    // Haversine公式计算两点间距离（米）
+    private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val R = 6371000.0 // 地球半径（米）
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return R * c
+    }
+    
+    // 离线地图下载（预留接口）
+    fun downloadOfflineRegion(region: OfflineRegion) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDownloading = true, downloadProgress = 0f) }
+            
+            // 模拟下载进度
+            for (i in 1..10) {
+                kotlinx.coroutines.delay(500)
+                _uiState.update { it.copy(downloadProgress = i / 10f) }
+            }
+            
+            // 更新下载状态
+            val updatedRegions = _uiState.value.offlineRegions.map {
+                if (it.id == region.id) it.copy(downloaded = true) else it
+            }
+            _uiState.update { 
+                it.copy(
+                    isDownloading = false,
+                    offlineRegions = updatedRegions,
+                    offlineMapAvailable = true
+                ) 
+            }
+        }
     }
 }
