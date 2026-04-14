@@ -377,3 +377,8 @@ fun formatDuration(durationMs: Long): String {
         else -> String.format("%d:%02d", minutes, seconds)
     }
 }
+
+fun formatDate(timestamp: Long): String {
+    val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    return sdf.format(Date(timestamp))
+}
