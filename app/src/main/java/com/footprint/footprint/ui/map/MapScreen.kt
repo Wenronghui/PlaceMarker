@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Typeface
+import android.view.GestureDetector
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -65,7 +67,6 @@ fun MapScreen(
     var showLayerDialog by remember { mutableStateOf(false) }
     var showAddMarkerDialog by remember { mutableStateOf(false) }
     var pendingMarkerLocation by remember { mutableStateOf<GeoPoint?>(null) }
-    var isClickToAddMarkerMode by remember { mutableStateOf(false) }
     
     // Track center coordinates for display
     var centerLat by remember { mutableStateOf(0.0) }
@@ -136,14 +137,15 @@ fun MapScreen(
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Layer selector button
                 FloatingActionButton(
                     onClick = { showLayerDialog = true },
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Layers, contentDescription = "选择图层")
+                    Icon(Icons.Default.Layers, contentDescription = "选择图层", modifier = Modifier.size(20.dp))
                 }
                 
                 // Current location button
@@ -156,27 +158,26 @@ fun MapScreen(
                             }
                         }
                     },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.MyLocation, contentDescription = "当前位置")
+                    Icon(Icons.Default.MyLocation, contentDescription = "当前位置", modifier = Modifier.size(20.dp))
                 }
                 
-                // Click to add marker mode button
-                if (!uiState.isTracking) {
-                    FloatingActionButton(
-                        onClick = {
-                            isClickToAddMarkerMode = !isClickToAddMarkerMode
-                        },
-                        containerColor = if (isClickToAddMarkerMode) 
-                            MaterialTheme.colorScheme.tertiary 
-                        else 
-                            MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Icon(
-                            if (isClickToAddMarkerMode) Icons.Default.EditLocation else Icons.Default.EditLocationAlt,
-                            contentDescription = "点击添加标记"
-                        )
-                    }
+                // Add marker button - 点击此按钮显示标记对话框
+                FloatingActionButton(
+                    onClick = {
+                        // 使用地图中心点作为标记位置
+                        val center = mapView?.mapCenter as? GeoPoint
+                        if (center != null) {
+                            pendingMarkerLocation = center
+                            showAddMarkerDialog = true
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.AddLocation, contentDescription = "添加标记", modifier = Modifier.size(20.dp))
                 }
                 
                 // Start/Stop tracking button
@@ -191,11 +192,13 @@ fun MapScreen(
                     containerColor = if (uiState.isTracking) 
                         ComposeColor(0xFFE53935)  // Red for stop
                     else 
-                        MaterialTheme.colorScheme.primary
+                        MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(56.dp)
                 ) {
                     Icon(
                         if (uiState.isTracking) Icons.Default.Stop else Icons.Default.PlayArrow,
-                        contentDescription = if (uiState.isTracking) "停止记录" else "开始记录"
+                        contentDescription = if (uiState.isTracking) "停止记录" else "开始记录",
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -214,6 +217,9 @@ fun MapScreen(
                         controller.setZoom(15.0)
                         setTileSource(uiState.currentLayer.tileSource)
                         
+                        // Enable tile download
+                        setUseDataConnection(true)
+                        
                         // Set initial position to China
                         val initialCenter = GeoPoint(35.0, 105.0)
                         controller.setCenter(initialCenter)
@@ -223,54 +229,18 @@ fun MapScreen(
                         // Add scale bar overlay (bottom left)
                         val scaleBarOverlay = ScaleBarOverlay(this).apply {
                             setCentred(true)
-                            setScaleBarOffset(170, 10)
+                            setScaleBarOffset(150, 10)
                         }
                         overlays.add(scaleBarOverlay)
-                        
-                        // Add north arrow overlay (top center)
-                        val northArrowOverlay = object : Overlay() {
-                            private val paint = Paint().apply {
-                                color = android.graphics.Color.BLACK
-                                textSize = 48f
-                                typeface = Typeface.DEFAULT_BOLD
-                                textAlign = Paint.Align.CENTER
-                                isAntiAlias = true
-                                style = Paint.Style.FILL
-                            }
-                            private val arrowPaint = Paint().apply {
-                                color = android.graphics.Color.RED
-                                textSize = 56f
-                                typeface = Typeface.DEFAULT_BOLD
-                                textAlign = Paint.Align.CENTER
-                                isAntiAlias = true
-                                style = Paint.Style.FILL
-                            }
-                            
-                            override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
-                                if (shadow) return
-                                
-                                val centerX = mapView.width / 2f
-                                val y = 60f
-                                
-                                // Draw N (red)
-                                canvas.drawText("N", centerX, y + 10f, arrowPaint)
-                                
-                                // Draw other directions (gray)
-                                paint.color = android.graphics.Color.GRAY
-                                canvas.drawText("S", centerX, mapView.height - 60f, paint)
-                                canvas.drawText("W", 40f, mapView.height / 2f, paint)
-                                canvas.drawText("E", mapView.width - 40f, mapView.height / 2f, paint)
-                            }
-                        }
-                        overlays.add(northArrowOverlay)
                         
                         // Add compass
                         val compassOverlay = CompassOverlay(
                             ctx,
                             InternalCompassOrientationProvider(ctx),
                             this
-                        )
-                        compassOverlay.enableCompass()
+                        ).apply {
+                            enableCompass()
+                        }
                         overlays.add(compassOverlay)
                         
                         // Add my location overlay
@@ -280,43 +250,73 @@ fun MapScreen(
                             overlays.add(locationOverlay)
                         }
                         
-                        // Track touch events to distinguish click from pan
-                        var lastTouchX = 0f
-                        var lastTouchY = 0f
-                        var totalMovedDistance = 0f
-                        
-                        setOnTouchListener { _, event ->
-                            when (event.action) {
-                                MotionEvent.ACTION_DOWN -> {
-                                    lastTouchX = event.x
-                                    lastTouchY = event.y
-                                    totalMovedDistance = 0f
-                                    false
-                                }
-                                MotionEvent.ACTION_MOVE -> {
-                                    val dx = event.x - lastTouchX
-                                    val dy = event.y - lastTouchY
-                                    totalMovedDistance += kotlin.math.sqrt(dx * dx + dy * dy)
-                                    lastTouchX = event.x
-                                    lastTouchY = event.y
-                                    false
-                                }
-                                MotionEvent.ACTION_UP -> {
-                                    // Only show marker dialog if:
-                                    // 1. User is in click-to-add-marker mode AND
-                                    // 2. User didn't move the map (less than 20px moved)
-                                    if (isClickToAddMarkerMode && totalMovedDistance < 20f) {
-                                        val projection = projection
-                                        val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as? GeoPoint
-                                        if (geoPoint != null) {
-                                            pendingMarkerLocation = geoPoint
-                                            showAddMarkerDialog = true
-                                        }
-                                    }
-                                    false
-                                }
-                                else -> false
+                        // Add North arrow overlay (东南西北指示)
+                        val northArrowOverlay = object : Overlay() {
+                            private val textPaint = Paint().apply {
+                                textSize = 40f
+                                typeface = Typeface.DEFAULT_BOLD
+                                textAlign = Paint.Align.CENTER
+                                isAntiAlias = true
                             }
+                            
+                            override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+                                if (shadow) return
+                                
+                                val centerX = mapView.width / 2f
+                                val topY = 80f
+                                val bottomY = mapView.height - 40f
+                                val leftX = 50f
+                                val rightX = mapView.width - 50f
+                                val middleY = mapView.height / 2f
+                                
+                                // Draw N (North) - Red, at top center
+                                textPaint.color = android.graphics.Color.RED
+                                textPaint.setShadowLayer(4f, 2f, 2f, android.graphics.Color.WHITE)
+                                canvas.drawText("N", centerX, topY, textPaint)
+                                
+                                // Draw S (South) - Gray, at bottom center
+                                textPaint.color = android.graphics.Color.GRAY
+                                textPaint.setShadowLayer(4f, 2f, 2f, android.graphics.Color.WHITE)
+                                canvas.drawText("S", centerX, bottomY, textPaint)
+                                
+                                // Draw W (West) - Gray, at left center
+                                canvas.drawText("W", leftX, middleY, textPaint)
+                                
+                                // Draw E (East) - Gray, at right center
+                                canvas.drawText("E", rightX, middleY, textPaint)
+                            }
+                        }
+                        overlays.add(northArrowOverlay)
+                        
+                        // Gesture detector for tap and long press
+                        val gestureDetector = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+                            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                                // 单击地图：获取点击位置并添加标记
+                                val projection = projection
+                                val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as? GeoPoint
+                                if (geoPoint != null) {
+                                    pendingMarkerLocation = geoPoint
+                                    showAddMarkerDialog = true
+                                }
+                                return true
+                            }
+                            
+                            override fun onLongPress(e: MotionEvent) {
+                                // 长按地图：获取长按位置并添加标记
+                                val projection = projection
+                                val geoPoint = projection.fromPixels(e.x.toInt(), e.y.toInt()) as? GeoPoint
+                                if (geoPoint != null) {
+                                    pendingMarkerLocation = geoPoint
+                                    showAddMarkerDialog = true
+                                }
+                            }
+                        })
+                        
+                        // Set touch listener - 滑动地图不会弹出标记框
+                        setOnTouchListener { _, event ->
+                            gestureDetector.onTouchEvent(event)
+                            // 返回false允许地图正常滚动/缩放
+                            false
                         }
                         
                         mapView = this
@@ -332,8 +332,7 @@ fun MapScreen(
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(16.dp)
-                    .padding(bottom = 80.dp),
+                    .padding(16.dp),
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 shadowElevation = 4.dp
@@ -342,29 +341,26 @@ fun MapScreen(
                     modifier = Modifier.padding(8.dp)
                 ) {
                     Text(
-                        text = "经度: ${String.format("%.6f", centerLon)}°",
+                        text = "经度: ${String.format("%.6f", centerLon)}",
                         style = MaterialTheme.typography.bodySmall,
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                     Text(
-                        text = "纬度: ${String.format("%.6f", centerLat)}°",
+                        text = "纬度: ${String.format("%.6f", centerLat)}",
                         style = MaterialTheme.typography.bodySmall,
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                 }
             }
             
-            // Tracking status indicator or click-to-add marker mode indicator
-            if (uiState.isTracking || isClickToAddMarkerMode) {
+            // Tracking status indicator
+            if (uiState.isTracking) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 16.dp),
                     shape = RoundedCornerShape(20.dp),
-                    color = if (uiState.isTracking) 
-                        MaterialTheme.colorScheme.primaryContainer 
-                    else 
-                        MaterialTheme.colorScheme.tertiaryContainer,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shadowElevation = 4.dp
                 ) {
                     Row(
@@ -372,36 +368,22 @@ fun MapScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (uiState.isTracking) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(ComposeColor.Red)
-                            )
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(ComposeColor.Red)
+                        )
+                        Text(
+                            text = "轨迹记录中",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        if (uiState.currentTrack != null) {
                             Text(
-                                text = "轨迹记录中",
-                                style = MaterialTheme.typography.labelLarge,
+                                text = "• ${String.format("%.1f", uiState.trackDistance / 1000)}km",
+                                style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            if (uiState.currentTrack != null) {
-                                Text(
-                                    text = "• ${String.format("%.1f", uiState.trackDistance / 1000)}km",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        } else if (isClickToAddMarkerMode) {
-                            Icon(
-                                Icons.Default.EditLocation,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "点击地图添加标记",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         }
                     }

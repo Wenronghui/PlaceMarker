@@ -168,6 +168,18 @@ class MapViewModel(application: Application) : AndroidViewModel(application) {
                         distance = distance
                     )
                 )
+                
+                // 停止后更新UI状态
+                withContext(Dispatchers.Main) {
+                    _uiState.update { 
+                        it.copy(
+                            isTracking = false, 
+                            currentTrack = null, 
+                            trackPoints = emptyList(), 
+                            trackDistance = 0.0
+                        ) 
+                    }
+                }
             }
         }
     }
