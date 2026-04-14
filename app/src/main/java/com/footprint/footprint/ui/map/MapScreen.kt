@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,14 +23,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.footprint.footprint.data.local.entity.MarkerEntity
+import com.footprint.footprint.data.local.entity.TrackPointEntity
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
@@ -45,7 +46,7 @@ import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MapScreen(
     viewModel: MapViewModel = viewModel()
@@ -58,6 +59,14 @@ fun MapScreen(
     var showOfflineDialog by remember { mutableStateOf(false) }
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    
+    // 标记对话框
+    var showMarkerDialog by remember { mutableStateOf(false) }
+    var markerLat by remember { mutableStateOf(0.0) }
+    var markerLon by remember { mutableStateOf(0.0) }
+    
+    // 标记列表对话框
+    var showMarkerListDialog by remember { mutableStateOf(false) }
     
     var hasLocationPermission by remember {
         mutableStateOf(
@@ -98,7 +107,6 @@ fun MapScreen(
         mapView?.let { map ->
             uiState.currentLocation?.let { location ->
                 if (hasLocationPermission) {
-                    // Center on location if this is first update
                     map.controller.animateTo(location)
                     map.controller.setZoom(15.0)
                 }
@@ -346,6 +354,36 @@ fun MapScreen(
                         }
                         overlays.add(directionOverlay)
                         
+                        // 标记点击监听器
+                        val markerClickOverlay = object : Overlay() {
+                            override fun onSingleTapConfirmed(e: android.view.MotionEvent?, mapView: MapView?): Boolean {
+                                e?.let { event ->
+                                    val projection = mapView?.projection
+                                    val geoPoint = projection?.fromPixels(event.x.toInt(), event.y.toInt()) as? GeoPoint
+                                    geoPoint?.let {
+                                        markerLat = it.latitude
+                                        markerLon = it.longitude
+                                        showMarkerDialog = true
+                                    }
+                                }
+                                return true
+                            }
+                            
+                            override fun onLongPress(e: android.view.MotionEvent?, mapView: MapView?): Boolean {
+                                e?.let { event ->
+                                    val projection = mapView?.projection
+                                    val geoPoint = projection?.fromPixels(event.x.toInt(), event.y.toInt()) as? GeoPoint
+                                    geoPoint?.let {
+                                        markerLat = it.latitude
+                                        markerLon = it.longitude
+                                        showMarkerDialog = true
+                                    }
+                                }
+                                return true
+                            }
+                        }
+                        overlays.add(markerClickOverlay)
+                        
                         // Add map listener for coordinate updates
                         addMapListener(object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
@@ -406,6 +444,125 @@ fun MapScreen(
                 }
             }
             
+            // Bottom bar with markers and tracking buttons
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 轨迹记录按钮
+                Surface(
+                    onClick = {
+                        if (uiState.isTracking) {
+                            viewModel.stopTracking()
+                        } else {
+                            viewModel.startTracking()
+                        }
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    color = if (uiState.isTracking) 
+                        MaterialTheme.colorScheme.error 
+                    else 
+                        MaterialTheme.colorScheme.primaryContainer,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (uiState.isTracking) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = if (uiState.isTracking) "停止记录" else "开始记录",
+                            tint = if (uiState.isTracking) 
+                                MaterialTheme.colorScheme.onError 
+                            else 
+                                MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (uiState.isTracking) "停止" else "记录",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (uiState.isTracking) 
+                                MaterialTheme.colorScheme.onError 
+                            else 
+                                MaterialTheme.colorScheme.primary
+                        )
+                        if (uiState.isTracking) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = formatDistance(uiState.trackDistance),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        }
+                    }
+                }
+                
+                // 标记按钮
+                Surface(
+                    onClick = {
+                        mapView?.let { map ->
+                            val center = map.mapCenter as? GeoPoint
+                            center?.let {
+                                markerLat = it.latitude
+                                markerLon = it.longitude
+                                showMarkerDialog = true
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.AddLocation,
+                            contentDescription = "添加标记",
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "标记",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+                
+                // 查看标记列表按钮
+                Surface(
+                    onClick = { showMarkerListDialog = true },
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.List,
+                            contentDescription = "标记列表",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "${uiState.markers.size}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            
             // Current layer indicator (top right)
             Surface(
                 modifier = Modifier
@@ -461,7 +618,65 @@ fun MapScreen(
                     }
                 }
             }
+            
+            // Recording indicator
+            if (uiState.isTracking) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.error
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.RecordVoiceOver,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onError,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "轨迹记录中 - ${formatDistance(uiState.trackDistance)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                    }
+                }
+            }
         }
+    }
+    
+    // 添加标记对话框
+    if (showMarkerDialog) {
+        AddMarkerDialog(
+            latitude = markerLat,
+            longitude = markerLon,
+            onDismiss = { showMarkerDialog = false },
+            onConfirm = { title, description, category ->
+                viewModel.addMarker(markerLat, markerLon, title, description, category)
+                showMarkerDialog = false
+            }
+        )
+    }
+    
+    // 标记列表对话框
+    if (showMarkerListDialog) {
+        MarkerListDialog(
+            markers = uiState.markers,
+            onDismiss = { showMarkerListDialog = false },
+            onMarkerClick = { marker ->
+                mapView?.controller?.animateTo(GeoPoint(marker.latitude, marker.longitude))
+                mapView?.controller?.setZoom(17.0)
+                showMarkerListDialog = false
+            },
+            onDeleteMarker = { marker ->
+                viewModel.deleteMarker(marker)
+            }
+        )
     }
     
     // Layer selection dialog
@@ -532,7 +747,6 @@ fun MapScreen(
             },
             text = {
                 Column {
-                    // Download progress
                     if (uiState.isDownloading) {
                         LinearProgressIndicator(
                             progress = { uiState.downloadProgress },
@@ -585,6 +799,196 @@ fun MapScreen(
 }
 
 @Composable
+fun AddMarkerDialog(
+    latitude: Double,
+    longitude: Double,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, description: String, category: String) -> Unit
+) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("普通") }
+    
+    val categories = listOf("普通", "钓点", "水库", "湖泊", "河流", "景点", "营地", "停车场")
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.AddLocation, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("添加标记")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "位置: ${String.format("%.6f", latitude)}, ${String.format("%.6f", longitude)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("标题 *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("描述") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 3
+                )
+                
+                Text("类别", style = MaterialTheme.typography.labelMedium)
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = { Text(cat, style = MaterialTheme.typography.bodySmall) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(title, description, category) },
+                enabled = title.isNotBlank()
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun MarkerListDialog(
+    markers: List<MarkerEntity>,
+    onDismiss: () -> Unit,
+    onMarkerClick: (MarkerEntity) -> Unit,
+    onDeleteMarker: (MarkerEntity) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.List, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("我的标记 (${markers.size})")
+            }
+        },
+        text = {
+            if (markers.isEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Default.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "暂无标记",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(markers) { marker ->
+                        MarkerListItem(
+                            marker = marker,
+                            onClick = { onMarkerClick(marker) },
+                            onDelete = { onDeleteMarker(marker) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+fun MarkerListItem(
+    marker: MarkerEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Place,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = marker.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = marker.category,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun OfflineRegionItem(
     region: OfflineRegion,
     isDownloaded: Boolean,
@@ -604,7 +1008,7 @@ fun OfflineRegionItem(
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                text = formatSize(region.size),
+                text = formatFileSize(region.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -632,7 +1036,15 @@ fun OfflineRegionItem(
     }
 }
 
-fun formatSize(bytes: Long): String {
+fun formatDistance(meters: Double): String {
+    return if (meters >= 1000) {
+        String.format("%.2f km", meters / 1000)
+    } else {
+        String.format("%.0f m", meters)
+    }
+}
+
+fun formatFileSize(bytes: Long): String {
     return when {
         bytes >= 1_000_000_000 -> String.format("%.1f GB", bytes / 1_000_000_000.0)
         bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
