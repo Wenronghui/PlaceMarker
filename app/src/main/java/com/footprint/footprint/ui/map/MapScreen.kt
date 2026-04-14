@@ -224,7 +224,6 @@ fun MapScreen(
                         val scaleBarOverlay = ScaleBarOverlay(this).apply {
                             setCentred(true)
                             setScaleBarOffset(170, 10)
-                            isDayMode = true
                         }
                         overlays.add(scaleBarOverlay)
                         
