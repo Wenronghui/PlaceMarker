@@ -18,7 +18,7 @@ import com.footprint.footprint.data.local.entity.MarkerEntity
 import java.text.SimpleDateFormat
 import java.util.*
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun MarkersScreen(
     viewModel: MarkersViewModel = viewModel()
