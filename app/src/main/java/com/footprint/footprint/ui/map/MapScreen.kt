@@ -798,6 +798,7 @@ fun MapScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddMarkerDialog(
     latitude: Double,
