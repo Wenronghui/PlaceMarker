@@ -1,6 +1,7 @@
 package com.footprint.footprint
 
 import android.app.Application
+import android.os.Environment
 import org.osmdroid.config.Configuration
 import java.io.File
 
@@ -11,8 +12,23 @@ class FootprintApp : Application() {
         // Configure OSMDroid
         Configuration.getInstance().apply {
             userAgentValue = packageName
-            osmdroidBasePath = File(cacheDir, "osmdroid")
-            osmdroidTileCache = File(cacheDir, "osmdroid/tiles")
+            
+            // 设置离线地图缓存路径
+            val basePath = File(cacheDir, "osmdroid")
+            osmdroidBasePath = basePath
+            osmdroidTileCache = File(basePath, "tiles")
+            
+            // 允许网络连接下载地图
+            osmdroidBasePath?.mkdirs()
+            osmdroidTileCache?.mkdirs()
+            
+            // 缓存设置
+            tileFileSystemCacheMaxBytes = 100L * 1024 * 1024 // 100MB
+            tileFileSystemCacheTrimBytes = 80L * 1024 * 1024 // 80MB
+            
+            // 网络超时设置
+            connectionTimeout = 30 * 1000 // 30秒
+            socketTimeout = 30 * 1000 // 30秒
         }
     }
 }
