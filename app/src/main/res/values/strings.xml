@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">足迹地图</string>
+    <string name="map_tab">地图</string>
+    <string name="markers_tab">标记</string>
+    <string name="tracks_tab">轨迹</string>
+    <string name="add_marker">添加标记</string>
+    <string name="start_tracking">开始记录轨迹</string>
+    <string name="stop_tracking">停止记录</string>
+    <string name="layer_standard">标准地图</string>
+    <string name="layer_satellite">卫星地图</string>
+    <string name="layer_hiking">徒步地图</string>
+    <string name="layer_contour">等高线图</string>
+    <string name="marker_name">标记名称</string>
+    <string name="marker_description">描述</string>
+    <string name="marker_category">分类</string>
+    <string name="save">保存</string>
+    <string name="cancel">取消</string>
+    <string name="delete">删除</string>
+    <string name="navigate_to">导航到这里</string>
+    <string name="category_camp">营地</string>
+    <string name="category_peak">山峰</string>
+    <string name="category_water">水源</string>
+    <string name="category_view">观景点</string>
+    <string name="category_parking">停车点</string>
+    <string name="category_other">其他</string>
+    <string name="location_permission_rationale">需要定位权限来记录你的位置和轨迹</string>
+    <string name="grant_permission">授予权限</string>
+    <string name="tracking_active">轨迹记录中</string>
+    <string name="track_length">轨迹长度</string>
+    <string name="track_duration">记录时长</string>
+</resources>
