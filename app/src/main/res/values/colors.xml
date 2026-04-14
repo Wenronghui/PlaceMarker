@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#2E7D32</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#A5D6A7</color>
+    <color name="on_primary_container">#1B5E20</color>
+    
+    <color name="secondary">#795548</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="secondary_container">#D7CCC8</color>
+    <color name="on_secondary_container">#4E342E</color>
+    
+    <color name="tertiary">#1565C0</color>
+    <color name="on_tertiary">#FFFFFF</color>
+    <color name="tertiary_container">#90CAF9</color>
+    <color name="on_tertiary_container">#0D47A1</color>
+    
+    <color name="background">#FAFAFA</color>
+    <color name="on_background">#1C1B1F</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#1C1B1F</color>
+    
+    <color name="error">#B00020</color>
+    <color name="on_error">#FFFFFF</color>
+    
+    <color name="track_color">#1976D2</color>
+    <color name="marker_camp">#FF9800</color>
+    <color name="marker_peak">#F44336</color>
+    <color name="marker_water">#2196F3</color>
+    <color name="marker_view">#9C27B0</color>
+    <color name="marker_parking">#607D8B</color>
+    <color name="marker_other">#4CAF50</color>
+</resources>
