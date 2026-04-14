@@ -14,13 +14,3 @@ data class TrackEntity(
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )
-
-@Entity(tableName = "track_points")
-data class TrackPointEntity(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
-    val trackId: Long,
-    val latitude: Double,
-    val longitude: Double,
-    val timestamp: Long = System.currentTimeMillis()
-)
