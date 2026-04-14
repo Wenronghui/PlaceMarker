@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.4"
+        android:scaleY="0.4"
+        android:translateX="32.4"
+        android:translateY="32.4">
+        <!-- Map pin icon -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M54,10C35.2,10 20,25.2 20,44C20,70 54,98 54,98C54,98 88,70 88,44C88,25.2 72.8,10 54,10ZM54,56C48.5,56 44,51.5 44,46C44,40.5 48.5,36 54,36C59.5,36 64,40.5 64,46C64,51.5 59.5,56 54,56Z"/>
+        <!-- Footprints -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M30,75C33,75 35,73 35,70C35,67 33,65 30,65C27,65 25,67 25,70C25,73 27,75 30,75Z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M38,82C41,82 43,80 43,77C43,74 41,72 38,72C35,72 33,74 33,77C33,80 35,82 38,82Z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M70,75C73,75 75,73 75,70C75,67 73,65 70,65C67,65 65,67 65,70C65,73 67,75 70,75Z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M78,82C81,82 83,80 83,77C83,74 81,72 78,72C75,72 73,74 73,77C73,80 75,82 78,82Z"/>
+    </group>
+</vector>
