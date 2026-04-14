@@ -4,22 +4,22 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
-import com.footprint.footprint.domain.model.Converters
-import com.footprint.footprint.domain.model.Marker
-import com.footprint.footprint.domain.model.Track
-import com.footprint.footprint.domain.model.TrackPoint
+import com.footprint.footprint.data.local.entity.MarkerEntity
+import com.footprint.footprint.data.local.entity.TrackEntity
+import com.footprint.footprint.data.local.entity.TrackPointEntity
 
 @Database(
-    entities = [Marker::class, Track::class, TrackPoint::class],
+    entities = [
+        MarkerEntity::class,
+        TrackEntity::class,
+        TrackPointEntity::class
+    ],
     version = 1,
     exportSchema = false
 )
-@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun markerDao(): MarkerDao
     abstract fun trackDao(): TrackDao
-    abstract fun trackPointDao(): TrackPointDao
     
     companion object {
         @Volatile
