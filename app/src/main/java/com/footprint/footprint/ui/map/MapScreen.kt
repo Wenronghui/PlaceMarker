@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -35,7 +36,6 @@ import com.footprint.footprint.ui.theme.*
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.GridLineOverlay
 import org.osmdroid.views.overlay.Marker as OsmMarker
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
@@ -223,10 +223,8 @@ fun MapScreen(
                         // Add scale bar overlay (bottom left)
                         val scaleBarOverlay = ScaleBarOverlay(this).apply {
                             setCentred(true)
-                            setScaleBarOffset(170f, 10f)
-                            enableMiniScaleBar(true)
-                            setMiniScaleBarHeight(30f)
-                            setMiniScaleBarWidth(100f)
+                            setScaleBarOffset(170, 10)
+                            isDayMode = true
                         }
                         overlays.add(scaleBarOverlay)
                         
