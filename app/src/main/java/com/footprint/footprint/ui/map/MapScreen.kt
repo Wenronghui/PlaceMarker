@@ -3,17 +3,15 @@ package com.footprint.footprint.ui.map
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -26,6 +24,7 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,8 +35,11 @@ import com.footprint.footprint.ui.theme.*
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.GridLineOverlay
 import org.osmdroid.views.overlay.Marker as OsmMarker
+import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.ScaleBarOverlay
 import org.osmdroid.views.overlay.compass.CompassOverlay
 import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
@@ -64,6 +66,10 @@ fun MapScreen(
     var showAddMarkerDialog by remember { mutableStateOf(false) }
     var pendingMarkerLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var isClickToAddMarkerMode by remember { mutableStateOf(false) }
+    
+    // Track center coordinates for display
+    var centerLat by remember { mutableStateOf(0.0) }
+    var centerLon by remember { mutableStateOf(0.0) }
     
     var hasLocationPermission by remember {
         mutableStateOf(
@@ -99,6 +105,31 @@ fun MapScreen(
     // Apply map layer
     LaunchedEffect(uiState.currentLayer) {
         mapView?.setTileSource(uiState.currentLayer.tileSource)
+    }
+    
+    // Update center coordinates when map is moved
+    LaunchedEffect(mapView) {
+        mapView?.let { map ->
+            val listener = object : org.osmdroid.events.MapListener {
+                override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
+                    val center = map.mapCenter as? GeoPoint
+                    center?.let {
+                        centerLat = it.latitude
+                        centerLon = it.longitude
+                    }
+                    return false
+                }
+                override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean {
+                    val center = map.mapCenter as? GeoPoint
+                    center?.let {
+                        centerLat = it.latitude
+                        centerLon = it.longitude
+                    }
+                    return false
+                }
+            }
+            map.addMapListener(listener)
+        }
     }
     
     Scaffold(
@@ -184,7 +215,57 @@ fun MapScreen(
                         setTileSource(uiState.currentLayer.tileSource)
                         
                         // Set initial position to China
-                        controller.setCenter(GeoPoint(35.0, 105.0))
+                        val initialCenter = GeoPoint(35.0, 105.0)
+                        controller.setCenter(initialCenter)
+                        centerLat = initialCenter.latitude
+                        centerLon = initialCenter.longitude
+                        
+                        // Add scale bar overlay (bottom left)
+                        val scaleBarOverlay = ScaleBarOverlay(this).apply {
+                            setCentred(true)
+                            setScaleBarOffset(170f, 10f)
+                            enableMiniScaleBar(true)
+                            setMiniScaleBarHeight(30f)
+                            setMiniScaleBarWidth(100f)
+                        }
+                        overlays.add(scaleBarOverlay)
+                        
+                        // Add north arrow overlay (top center)
+                        val northArrowOverlay = object : Overlay() {
+                            private val paint = Paint().apply {
+                                color = android.graphics.Color.BLACK
+                                textSize = 48f
+                                typeface = Typeface.DEFAULT_BOLD
+                                textAlign = Paint.Align.CENTER
+                                isAntiAlias = true
+                                style = Paint.Style.FILL
+                            }
+                            private val arrowPaint = Paint().apply {
+                                color = android.graphics.Color.RED
+                                textSize = 56f
+                                typeface = Typeface.DEFAULT_BOLD
+                                textAlign = Paint.Align.CENTER
+                                isAntiAlias = true
+                                style = Paint.Style.FILL
+                            }
+                            
+                            override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+                                if (shadow) return
+                                
+                                val centerX = mapView.width / 2f
+                                val y = 60f
+                                
+                                // Draw N (red)
+                                canvas.drawText("N", centerX, y + 10f, arrowPaint)
+                                
+                                // Draw other directions (gray)
+                                paint.color = android.graphics.Color.GRAY
+                                canvas.drawText("S", centerX, mapView.height - 60f, paint)
+                                canvas.drawText("W", 40f, mapView.height / 2f, paint)
+                                canvas.drawText("E", mapView.width - 40f, mapView.height / 2f, paint)
+                            }
+                        }
+                        overlays.add(northArrowOverlay)
                         
                         // Add compass
                         val compassOverlay = CompassOverlay(
@@ -249,6 +330,32 @@ fun MapScreen(
                     mapView = map
                 }
             )
+            
+            // Coordinates display (bottom left)
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(16.dp)
+                    .padding(bottom = 80.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                shadowElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    Text(
+                        text = "经度: ${String.format("%.6f", centerLon)}°",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "纬度: ${String.format("%.6f", centerLat)}°",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 12.sp
+                    )
+                }
+            }
             
             // Tracking status indicator or click-to-add marker mode indicator
             if (uiState.isTracking || isClickToAddMarkerMode) {
@@ -363,7 +470,7 @@ fun MapScreen(
 }
 
 private fun updateMapOverlays(map: MapView, uiState: MapUiState) {
-    // Remove old markers and polylines (keep location overlay and compass)
+    // Remove old markers and polylines (keep location overlay, compass, scale bar, north arrow)
     map.overlays.removeAll { it is OsmMarker || it is Polyline }
     
     // Add markers
