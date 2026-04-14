@@ -63,6 +63,7 @@ fun MapScreen(
     var showLayerDialog by remember { mutableStateOf(false) }
     var showAddMarkerDialog by remember { mutableStateOf(false) }
     var pendingMarkerLocation by remember { mutableStateOf<GeoPoint?>(null) }
+    var isClickToAddMarkerMode by remember { mutableStateOf(false) }
     
     var hasLocationPermission by remember {
         mutableStateOf(
@@ -129,18 +130,42 @@ fun MapScreen(
                     Icon(Icons.Default.MyLocation, contentDescription = "当前位置")
                 }
                 
-                // Add marker button
+                // Click to add marker mode button
+                if (!uiState.isTracking) {
+                    FloatingActionButton(
+                        onClick = {
+                            isClickToAddMarkerMode = !isClickToAddMarkerMode
+                        },
+                        containerColor = if (isClickToAddMarkerMode) 
+                            MaterialTheme.colorScheme.tertiary 
+                        else 
+                            MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Icon(
+                            if (isClickToAddMarkerMode) Icons.Default.EditLocation else Icons.Default.EditLocationAlt,
+                            contentDescription = "点击添加标记"
+                        )
+                    }
+                }
+                
+                // Start/Stop tracking button
                 FloatingActionButton(
                     onClick = {
-                        val center = mapView?.mapCenter as? GeoPoint
-                        if (center != null) {
-                            pendingMarkerLocation = center
-                            showAddMarkerDialog = true
+                        if (uiState.isTracking) {
+                            viewModel.stopTracking()
+                        } else {
+                            viewModel.startTracking()
                         }
                     },
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = if (uiState.isTracking) 
+                        ComposeColor(0xFFE53935)  // Red for stop
+                    else 
+                        MaterialTheme.colorScheme.primary
                 ) {
-                    Icon(Icons.Default.AddLocation, contentDescription = "添加标记")
+                    Icon(
+                        if (uiState.isTracking) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = if (uiState.isTracking) "停止记录" else "开始记录"
+                    )
                 }
             }
         }
@@ -177,20 +202,42 @@ fun MapScreen(
                             overlays.add(locationOverlay)
                         }
                         
-                        // Long press to add marker
+                        // Track touch events to distinguish click from pan
+                        var lastTouchX = 0f
+                        var lastTouchY = 0f
+                        var totalMovedDistance = 0f
+                        
                         setOnTouchListener { _, event ->
-                            if (event.action == MotionEvent.ACTION_DOWN) {
-                                false
-                            } else if (event.action == MotionEvent.ACTION_UP) {
-                                val projection = projection
-                                val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as? GeoPoint
-                                if (geoPoint != null) {
-                                    pendingMarkerLocation = geoPoint
-                                    showAddMarkerDialog = true
+                            when (event.action) {
+                                MotionEvent.ACTION_DOWN -> {
+                                    lastTouchX = event.x
+                                    lastTouchY = event.y
+                                    totalMovedDistance = 0f
+                                    false
                                 }
-                                false
-                            } else {
-                                false
+                                MotionEvent.ACTION_MOVE -> {
+                                    val dx = event.x - lastTouchX
+                                    val dy = event.y - lastTouchY
+                                    totalMovedDistance += kotlin.math.sqrt(dx * dx + dy * dy)
+                                    lastTouchX = event.x
+                                    lastTouchY = event.y
+                                    false
+                                }
+                                MotionEvent.ACTION_UP -> {
+                                    // Only show marker dialog if:
+                                    // 1. User is in click-to-add-marker mode AND
+                                    // 2. User didn't move the map (less than 20px moved)
+                                    if (isClickToAddMarkerMode && totalMovedDistance < 20f) {
+                                        val projection = projection
+                                        val geoPoint = projection.fromPixels(event.x.toInt(), event.y.toInt()) as? GeoPoint
+                                        if (geoPoint != null) {
+                                            pendingMarkerLocation = geoPoint
+                                            showAddMarkerDialog = true
+                                        }
+                                    }
+                                    false
+                                }
+                                else -> false
                             }
                         }
                         
@@ -203,14 +250,17 @@ fun MapScreen(
                 }
             )
             
-            // Tracking status indicator
-            if (uiState.isTracking) {
+            // Tracking status indicator or click-to-add marker mode indicator
+            if (uiState.isTracking || isClickToAddMarkerMode) {
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 16.dp),
                     shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = if (uiState.isTracking) 
+                        MaterialTheme.colorScheme.primaryContainer 
+                    else 
+                        MaterialTheme.colorScheme.tertiaryContainer,
                     shadowElevation = 4.dp
                 ) {
                     Row(
@@ -218,22 +268,36 @@ fun MapScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(ComposeColor.Red)
-                        )
-                        Text(
-                            text = "轨迹记录中",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        if (uiState.currentTrack != null) {
+                        if (uiState.isTracking) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(ComposeColor.Red)
+                            )
                             Text(
-                                text = "• ${String.format("%.1f", uiState.trackDistance / 1000)}km",
-                                style = MaterialTheme.typography.labelMedium,
+                                text = "轨迹记录中",
+                                style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            if (uiState.currentTrack != null) {
+                                Text(
+                                    text = "• ${String.format("%.1f", uiState.trackDistance / 1000)}km",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        } else if (isClickToAddMarkerMode) {
+                            Icon(
+                                Icons.Default.EditLocation,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "点击地图添加标记",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
                             )
                         }
                     }
