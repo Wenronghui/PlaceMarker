@@ -1,7 +1,6 @@
 package com.footprint.footprint
 
 import android.app.Application
-import android.os.Environment
 import org.osmdroid.config.Configuration
 import java.io.File
 
@@ -25,10 +24,6 @@ class FootprintApp : Application() {
             // 缓存设置
             tileFileSystemCacheMaxBytes = 100L * 1024 * 1024 // 100MB
             tileFileSystemCacheTrimBytes = 80L * 1024 * 1024 // 80MB
-            
-            // 网络超时设置
-            connectionTimeout = 30 * 1000 // 30秒
-            socketTimeout = 30 * 1000 // 30秒
         }
     }
 }

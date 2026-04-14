@@ -134,13 +134,19 @@ fun MapScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        BasicTextField(
+                        TextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
                             modifier = Modifier.weight(1f),
                             textStyle = TextStyle(fontSize = 16.sp),
                             placeholder = { Text("搜索地点...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            singleLine = true
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent
+                            )
                         )
                         IconButton(onClick = { 
                             showSearchBar = false

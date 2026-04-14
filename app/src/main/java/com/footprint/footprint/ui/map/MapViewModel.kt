@@ -47,17 +47,11 @@ enum class MapLayerType(
         TileSourceFactory.OpenTopo,
         "水库河流湖泊标注，适合钓鱼"
     ),
-    // 户外地图
+    // 户外地图（使用OpenTopo）
     OUTDOOR(
         "户外探索",
-        TileSourceFactory.US_Topo,
+        TileSourceFactory.OpenTopo,
         "户外探险地图"
-    ),
-    // 暖色地图
-    CYCLE(
-        "骑行地图",
-        TileSourceFactory.CYCLEMAP,
-        "骑行友好地图"
     )
 }
 
